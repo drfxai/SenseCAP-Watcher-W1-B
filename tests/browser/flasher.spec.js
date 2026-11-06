@@ -36,88 +36,80 @@ async function mockDevice(page, {chip='ESP32-S3',capacity=0x19,knownHimax=false,
       async after(){}
     }`}));
 }
-test('unsupported browser explains requirements and disables connection', async ({page}) => {
-  await page.addInitScript(() => Object.defineProperty(navigator,'serial',{value:undefined,configurable:true}));
-  await page.goto('/');
-  await expect(page.locator('#support')).toContainText('این مرورگر اتصال سریال ندارد');
-  await expect(page.locator('#connect')).toBeDisabled();
+async function startEsp(page) {
+  await page.locator('#install').click();await page.locator('#ack').check();await page.locator('#wizard-start').click();
+}
+async function stageOne(page) {
+  await page.goto('/');await startEsp(page);await expect(page.locator('#step-esp')).toContainText('✓');await expect(page.locator('#native-download')).toBeEnabled();
+}
+async function readReport(page) {
+  await page.locator('#wizard-close').click();
+  if(!await page.locator('#utilities').evaluate(e=>e.open))await page.locator('#utilities > summary').click();
+  const pending=page.waitForEvent('download');await page.locator('#report').click();
+  const stream=await (await pending).createReadStream();const chunks=[];for await(const chunk of stream)chunks.push(chunk);
+  return JSON.parse(Buffer.concat(chunks).toString());
+}
+test('landing has exactly two main actions; unsupported browser cannot start serial operations',async({page})=>{
+  await page.addInitScript(()=>Object.defineProperty(navigator,'serial',{value:undefined,configurable:true}));await page.goto('/');
+  await expect(page.locator('.main-actions button')).toHaveCount(2);await expect(page.locator('#support')).toContainText('این مرورگر اتصال سریال ندارد');
+  await expect(page.locator('#backup')).toBeDisabled();await expect(page.locator('#install')).toBeDisabled();
 });
-test('requires backup and consent, then writes sparse stock files without full erase', async ({page}) => {
-  await mockDevice(page);await page.goto('/');
-  await page.locator('#connect').click();
+test('one backup action connects, downloads and disconnects without flashing',async({page})=>{
+  await mockDevice(page);await page.goto('/');const pending=page.waitForEvent('download');await page.locator('#backup').click();
+  expect((await pending).suggestedFilename()).toMatch(/^nvsfactory-/);await expect(page.locator('#status')).toContainText('ناحیه هویت خالی');
+  expect(await page.evaluate(()=>window.deviceWrites)).toEqual([]);expect(await page.evaluate(()=>window.portRequests)).toBe(1);
   await expect(page.locator('#backup')).toBeEnabled();
-  await page.locator('#ack').check();
-  await expect(page.locator('#install')).toBeDisabled();
-  const download=page.waitForEvent('download');await page.locator('#backup').click();
-  expect((await download).suggestedFilename()).toMatch(/^nvsfactory-/);
-  await expect(page.locator('#status')).toContainText('این ناحیه خالی است');
-  await page.locator('#install').click();
-  await expect(page.locator('#status')).toContainText('نصب و بررسی کامل شد');
+});
+test('install wizard requires consent then automatically backs up and writes sparse stock files',async({page})=>{
+  await mockDevice(page);await page.goto('/');await page.locator('#install').click();await expect(page.locator('#wizard')).toBeVisible();
+  await expect(page.locator('#wizard-start')).toBeDisabled();expect(await page.evaluate(()=>window.portRequests)).toBe(0);
+  await page.locator('#ack').check();const pending=page.waitForEvent('download');await page.locator('#wizard-start').click();
+  expect((await pending).suggestedFilename()).toMatch(/^nvsfactory-/);await expect(page.locator('#native-download')).toBeEnabled();
   expect(await page.evaluate(()=>window.deviceWrites)).toEqual([{eraseAll:false,addresses:[0,0x8000,0x3b000,0x10d000,0x110000,0x1910000,0x1a10000],md5:'900150983cd24fb0d6963f7d28e17f72'}]);
 });
-test('corrupted image is rejected before any write', async ({page}) => {
-  await mockDevice(page);await page.route('**/firmware/esp32/storage.bin',route=>route.fulfill({body:'corrupt'}));
-  await page.goto('/');await page.locator('#connect').click();
-  await page.locator('#backup').click();await page.locator('#ack').check();await page.locator('#install').click();
-  await expect(page.locator('#log')).toContainText('Integrity check failed');
-  expect(await page.evaluate(()=>window.deviceWrites)).toEqual([]);
+test('corrupted stock image is rejected before a flash write',async({page})=>{
+  await mockDevice(page);await page.route('**/firmware/esp32/storage.bin',route=>route.fulfill({body:'corrupt'}));await page.goto('/');await startEsp(page);
+  await expect(page.locator('#wizard-status')).toContainText('Integrity check failed');expect(await page.evaluate(()=>window.deviceWrites)).toEqual([]);
 });
-for (const config of [{chip:'ESP32',capacity:0x19},{chip:'ESP32-S3',capacity:0x18}]) {
+for(const config of [{chip:'ESP32',capacity:0x19},{chip:'ESP32-S3',capacity:0x18}]) {
   test(`rejects incompatible hardware ${config.chip} / ${config.capacity}`,async({page})=>{
-    await mockDevice(page,config);await page.goto('/');await page.locator('#connect').click();
-    await expect(page.locator('#log')).toContainText('ERROR:');await expect(page.locator('#backup')).toBeDisabled();
+    await mockDevice(page,config);await page.goto('/');await startEsp(page);await expect(page.locator('#wizard-status')).toContainText('عملیات متوقف شد');
     expect(await page.evaluate(()=>window.deviceWrites)).toEqual([]);
   });
 }
-
-async function stageOne(page) {
-  await page.goto('/');await page.locator('#connect').click();await page.locator('#backup').click();
-  await page.locator('#ack').check();await page.locator('#install').click();
-  await expect(page.locator('#step-esp')).toContainText('نصب شد');
-}
+test('downloading native installer does not imply successful installation; user confirmation is explicit in report',async({page})=>{
+  await mockDevice(page);await stageOne(page);await expect(page.locator('#native-complete')).toBeDisabled();
+  const pending=page.waitForEvent('download');await page.locator('#native-download').click();expect((await pending).suggestedFilename()).toBe('flash-himax-com7.ps1');
+  await expect(page.locator('#finished-panel')).toBeHidden();expect(await page.evaluate(()=>window.himaxPackets)).toBe(0);
+  await page.locator('#native-confirm').check();await page.locator('#native-complete').click();await expect(page.locator('#finished-panel')).toBeVisible();
+  const report=await readReport(page);expect(report.stages.himax.state).toBe('user-confirmed-native');expect(report.stages.himax.readbackVerified).toBe(false);expect(report.stages.himax.bootloaderCompletionConfirmed).toBe(false);
+});
 for(const knownHimax of [false,true]) {
-  test(`two-stage browser installation, previously authorized Himax: ${knownHimax}`,async({page})=>{
-    await mockDevice(page,{knownHimax});await page.goto('/');
-    await page.locator('#himax-ack').check();await expect(page.locator('#install-himax')).toBeDisabled();
-    await stageOne(page);await page.locator('#himax-ack').check();await page.locator('#install-himax').click();
-    await expect(page.locator('#step-himax')).toContainText('نصب شد');
-    expect(await page.evaluate(()=>window.himaxPackets)).toBe(4288);
-    expect(await page.evaluate(()=>window.himaxRebooted)).toBe(true);
+  test(`advanced browser transfer remains available, previously authorized Himax: ${knownHimax}`,async({page})=>{
+    await mockDevice(page,{knownHimax});await stageOne(page);await page.locator('.advanced > summary').click();if(knownHimax)await page.locator('#manual-himax').uncheck();
+    await page.locator('#install-himax').click();await expect(page.locator('#finished-panel')).toBeVisible();
+    expect(await page.evaluate(()=>window.himaxPackets)).toBe(4288);expect(await page.evaluate(()=>window.himaxRebooted)).toBe(true);
     expect(await page.evaluate(()=>window.portRequests)).toBe(knownHimax?1:2);
-    const download=page.waitForEvent('download');await page.locator('#report').click();
-    expect((await download).suggestedFilename()).toBe('watcher-recovery-report.json');
   });
 }
-test('Himax integrity failure sends no firmware packets',async({page})=>{
-  await mockDevice(page);await stageOne(page);
-  await page.route('**/firmware/himax/*.img',route=>route.fulfill({body:'corrupt'}));
-  await page.locator('#himax-ack').check();await page.locator('#install-himax').click();
-  await expect(page.locator('#log')).toContainText('Himax image integrity check failed');
+test('advanced Himax integrity failure sends no packets',async({page})=>{
+  await mockDevice(page);await stageOne(page);await page.route('**/firmware/himax/*.img',route=>route.fulfill({body:'corrupt'}));
+  await page.locator('.advanced > summary').click();await page.locator('#install-himax').click();await expect(page.locator('#wizard-status')).toContainText('Himax image integrity check failed');
   expect(await page.evaluate(()=>window.himaxPackets)).toBe(0);
 });
-test('choosing the ESP32 port at stage two is rejected before any transfer',async({page})=>{
-  await mockDevice(page,{wrongHimax:true});await stageOne(page);
-  await page.locator('#himax-ack').check();await page.locator('#install-himax').click();
-  await expect(page.locator('#log')).toContainText('This is the ESP32 port');
-  expect(await page.evaluate(()=>window.himaxPackets)).toBe(0);
+test('wrong ESP32 port at Himax stage records exact error and phase',async({page})=>{
+  await mockDevice(page,{wrongHimax:true});await stageOne(page);await page.locator('.advanced > summary').click();await page.locator('#install-himax').click();
+  await expect(page.locator('#wizard-status')).toContainText('This is the ESP32 port');
+  const report=await readReport(page);expect(report.stages.himax.state).toBe('failed');expect(report.stages.himax.phase).toBe('select-port');
+  expect(report.stages.himax.error.message).toContain('This is the ESP32 port');expect(report.events.some(event=>event.message.includes('ERROR:'))).toBe(true);
 });
-
-test('failed stage records exact error and phase in the downloaded report',async({page})=>{
-  await mockDevice(page,{wrongHimax:true});await stageOne(page);
-  await page.locator('#himax-ack').check();await page.locator('#install-himax').click();
-  await expect(page.locator('#log')).toContainText('This is the ESP32 port');
-  const pending=page.waitForEvent('download');await page.locator('#report').click();
-  const download=await pending;const stream=await download.createReadStream();const chunks=[];
-  for await(const chunk of stream)chunks.push(chunk);
-  const report=JSON.parse(Buffer.concat(chunks).toString());
-  expect(report.stages.himax.state).toBe('failed');expect(report.stages.himax.phase).toBe('select-port');
-  expect(report.stages.himax.error.message).toContain('This is the ESP32 port');
-  expect(report.events.some(event=>event.message.includes('ERROR:'))).toBe(true);
-});
-test('previous verified ESP32 report enables Himax without another ESP32 write',async({page})=>{
-  await mockDevice(page);await page.goto('/');
+test('previous verified report resumes at stage two with no ESP32 writes',async({page})=>{
+  await mockDevice(page);await page.goto('/');await page.locator('#install').click();await page.locator('#resume-details > summary').click();
   await page.locator('#resume-file').setInputFiles({name:'previous.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({device:{eui:'2CF7F1C9647000A4'},stages:{esp32:{version:'1.1.7',verified:true,factoryPartitionPreserved:true}}}))});
-  await expect(page.locator('#step-esp')).toContainText('نصب شد');
-  expect(await page.evaluate(()=>window.deviceWrites)).toEqual([]);
-  await expect(page.locator('#manual-himax')).toBeChecked();
+  await expect(page.locator('#native-download')).toBeEnabled();await expect(page.locator('#esp-panel')).toBeHidden();expect(await page.evaluate(()=>window.deviceWrites)).toEqual([]);
+});
+test('dark UI and installation dialog fit mobile width',async({page})=>{
+  await mockDevice(page);await page.setViewportSize({width:390,height:844});await page.goto('/');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.locator('#install').click();
+  expect(await page.locator('#wizard').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
 });
