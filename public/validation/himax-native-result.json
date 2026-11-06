@@ -1,0 +1,21 @@
+{
+  "source": "Owner-supplied PowerShell console output",
+  "model": "SenseCAP Watcher W1-B",
+  "esp32Port": "COM6",
+  "himaxPort": "COM7",
+  "tool": "python-sscma",
+  "toolVersion": "0.5.7",
+  "pythonVersionReported": "3.15",
+  "baudRate": 921600,
+  "firmware": "himax_firmware_20240816.img",
+  "firmwareSize": 548864,
+  "sha256": "55ab2bcaee3bf6e0fad149bb06b36139610bb5578847b94c59937eb32875d0fd",
+  "transferProgressReported": "100%",
+  "elapsedSecondsReported": 13,
+  "consoleErrorReported": false,
+  "verificationLevel": "Owner-reported native transfer completed without a displayed error",
+  "flashReadbackVerified": false,
+  "postRebootFunctionVerified": false,
+  "browserHimaxInstallVerifiedOnHardware": false,
+  "factoryCredentialsRestored": false
+}

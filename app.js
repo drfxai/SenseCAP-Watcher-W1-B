@@ -173,7 +173,7 @@ $('cancel-himax').addEventListener('click',()=>{
   himaxAbort?.abort();$('himax-status').textContent='در حال توقف مرحله Himax…';controls();
 });
 $('report').addEventListener('click',()=>{
-  const result={schemaVersion:2,flasherVersion:'1.2.0',device:profile || null,stages:report,events,browser:navigator.userAgent,factoryCredentialsRestored:false};
+  const result={schemaVersion:2,flasherVersion:'1.3.0',device:profile || null,stages:report,events,browser:navigator.userAgent,factoryCredentialsRestored:false};
   save(new TextEncoder().encode(JSON.stringify(result,null,2)+'\n'),'watcher-recovery-report.json');
 });
 fetch('device-profile.json').then(response=>{if(!response.ok)throw new Error('Profile unavailable');return response.json();}).then(value=>{
