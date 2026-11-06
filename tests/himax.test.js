@@ -5,13 +5,13 @@ const enc=new TextEncoder();
 const menu='Himax Bootloader\r\n1. Xmodem download and burn FW image\r\n';
 const prompt='Send data using the xmodem protocol from your terminal\r\nC';
 class VirtualHimax {
-  constructor({retry=false,can=false,completion=true}={}) {this.queue=[];this.packets=[];this.retry=retry;this.can=can;this.completion=completion;this.eot=0;this.rebooted=false;this.time=0;}
+  constructor({retry=false,can=false,completion=true}={}) {this.queue=[];this.packets=[];this.retry=retry;this.can=can;this.completion=completion;this.eot=0;this.rebooted=false;this.time=0;this.receiverReady=false;this.nextC=0;}
   enqueue(text) {this.queue.push(...enc.encode(text));}
-  async readByte(timeout) {if(this.queue.length)return this.queue.shift();this.time+=timeout;return null;}
+  async readByte(timeout) {if(this.queue.length)return this.queue.shift();this.time+=timeout;if(this.receiverReady && !this.packets.length && this.time>=this.nextC){this.nextC=this.time+300;return 0x43;}return null;}
   async write(bytes) {
     const text=new TextDecoder().decode(bytes);
     if(text.includes('AT+RST')){this.enqueue(menu);return;}
-    if(text==='1'){this.enqueue(prompt);return;}
+    if(text==='1'){this.receiverReady=true;this.nextC=this.time+300;this.enqueue(prompt);return;}
     if(text==='y'){this.rebooted=true;return;}
     if(bytes[0]===1 && bytes.length===133) {
       assert.equal(bytes[1]+bytes[2],255);
@@ -75,4 +75,11 @@ test('timed serial read does not steal the next packet; close releases locks',as
   await channel.open();assert.equal(await channel.readByte(5),null);
   controller.enqueue(new Uint8Array([6,21]));assert.equal(await channel.readByte(100),6);assert.equal(await channel.readByte(100),21);
   await channel.close();assert.equal(readable.locked,false);assert.equal(writable.locked,false);assert.equal(closed,true);
+});
+test('C inside bootloader explanatory text is not a CRC readiness request',async()=>{
+  let time=0;
+  const queue=[...enc.encode(menu+prompt.slice(0,-1)+'CRC mode: use your terminal')];
+  const flasher=new HimaxFlasher({readByte:async n=>{time+=n;return queue.shift()??null;},write:async()=>{}},{now:()=>time});
+  await assert.rejects(flasher.connect({timeout:30000}),/No verified Himax/);
+  assert.equal(flasher.ready,false);
 });

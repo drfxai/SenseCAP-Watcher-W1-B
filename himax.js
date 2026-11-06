@@ -79,7 +79,7 @@ export class HimaxFlasher {
     // AT+RST is the official application reset command; on a blank chip the
     // user may need a physical reset. Never infer Himax from USB ID or a lone C.
     await this.text('\rAT+RST\r\n');
-    let nextSelect=0,selected=false;
+    let nextSelect=0,selected=false, candidateC=false, stableC=0;
     const deadline=this.now()+timeout;
     this.log('Waiting for Himax bootloader. Reset device now if no response.');
     while(this.now()<deadline) {
@@ -91,19 +91,31 @@ export class HimaxFlasher {
       }
       const prompt=this.tail.includes('Send data using the xmodem protocol from your terminal');
       if(prompt && !this.recognized) {this.recognized=true;this.log('Himax bootloader transfer prompt recognized.');}
-      if(this.recognized && prompt && byte===0x43) {
-        this.ready=true;this.log('Himax XMODEM-CRC receiver ready.');return;
+      // A C in explanatory text (e.g. CRC/Ctrl) is not a receiver request.
+      // The official Python tool waits for repeated C requests. Require two
+      // isolated C bytes, each followed by a quiet interval, before packet 1.
+      if(this.recognized && prompt) {
+        if(byte===0x43) candidateC=true;
+        else if(byte!==null) {candidateC=false;if(byte!==10 && byte!==13)stableC=0;}
+        else if(candidateC) {
+          candidateC=false;stableC++;
+          this.log(`Himax isolated CRC request ${stableC}/2.`);
+          if(stableC>=2) {this.ready=true;this.log('Himax XMODEM-CRC receiver ready.');return;}
+        }
       }
     }
     throw new Error('No verified Himax bootloader response. Select its other UART port and reset the device; no firmware was sent.');
   }
   async response(timeout=10000) {
     const deadline=this.now()+timeout;
+    const received=[];
     while(this.now()<deadline) {
       const byte=await this.byte(Math.min(1000,Math.max(1,deadline-this.now())));
+      if(byte!==null && received.length<64)received.push(byte);
       if(byte===0x06 || byte===0x15)return byte;
       if(byte===0x18)throw new Error('Himax bootloader cancelled the transfer');
     }
+    this.log(`Himax ACK timeout; received bytes: ${received.map(b=>b.toString(16).padStart(2,'0')).join(' ') || '(none)'}`);
     return null;
   }
   async flash(bytes) {
@@ -115,7 +127,7 @@ export class HimaxFlasher {
       let accepted=false;
       for(let retry=0;retry<15;retry++) {
         await this.send(packet);
-        if(await this.response()===0x06) {accepted=true;break;}
+        if(await this.response(index===1 ? 60000 : 10000)===0x06) {accepted=true;break;}
         this.log(`Himax retry: packet ${index}, attempt ${retry+1}`);
       }
       if(!accepted)throw new Error(`Himax packet ${index} was not acknowledged`);

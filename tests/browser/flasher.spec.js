@@ -12,7 +12,7 @@ async function mockDevice(page, {chip='ESP32-S3',capacity=0x19,knownHimax=false,
         this.writable=new WritableStream({write(bytes){
           const text=new TextDecoder().decode(bytes);
           if(text.includes('AT+RST')){enqueue('1. Xmodem download and burn FW image\r\n');return;}
-          if(text==='1' && !started){started=true;enqueue('Send data using the xmodem protocol from your terminal\r\nC');return;}
+          if(text==='1' && !started){started=true;enqueue('Send data using the xmodem protocol from your terminal\r\nC');setTimeout(()=>enqueue('C'),300);return;}
           if(text==='1')return;
           if(text==='y'){window.himaxRebooted=true;return;}
           if(bytes.length===133 && bytes[0]===1){window.himaxPackets++;controller.enqueue(new Uint8Array([6]));return;}
@@ -100,4 +100,24 @@ test('choosing the ESP32 port at stage two is rejected before any transfer',asyn
   await page.locator('#himax-ack').check();await page.locator('#install-himax').click();
   await expect(page.locator('#log')).toContainText('This is the ESP32 port');
   expect(await page.evaluate(()=>window.himaxPackets)).toBe(0);
+});
+
+test('failed stage records exact error and phase in the downloaded report',async({page})=>{
+  await mockDevice(page,{wrongHimax:true});await stageOne(page);
+  await page.locator('#himax-ack').check();await page.locator('#install-himax').click();
+  await expect(page.locator('#log')).toContainText('This is the ESP32 port');
+  const pending=page.waitForEvent('download');await page.locator('#report').click();
+  const download=await pending;const stream=await download.createReadStream();const chunks=[];
+  for await(const chunk of stream)chunks.push(chunk);
+  const report=JSON.parse(Buffer.concat(chunks).toString());
+  expect(report.stages.himax.state).toBe('failed');expect(report.stages.himax.phase).toBe('select-port');
+  expect(report.stages.himax.error.message).toContain('This is the ESP32 port');
+  expect(report.events.some(event=>event.message.includes('ERROR:'))).toBe(true);
+});
+test('previous verified ESP32 report enables Himax without another ESP32 write',async({page})=>{
+  await mockDevice(page);await page.goto('/');
+  await page.locator('#resume-file').setInputFiles({name:'previous.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({device:{eui:'2CF7F1C9647000A4'},stages:{esp32:{version:'1.1.7',verified:true,factoryPartitionPreserved:true}}}))});
+  await expect(page.locator('#step-esp')).toContainText('نصب شد');
+  expect(await page.evaluate(()=>window.deviceWrites)).toEqual([]);
+  await expect(page.locator('#manual-himax')).toBeChecked();
 });

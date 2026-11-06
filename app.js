@@ -1,3 +1,4 @@
+import { verifiedPreviousStage } from './recovery-report.js';
 import { SerialChannel, HimaxFlasher, HIMAX_SIZE, HIMAX_SHA256 } from './himax.js';
 import { ESPLoader, Transport } from 'esptool-js';
 import { readFactory } from './flash-io.js';
@@ -9,14 +10,18 @@ let loader, transport, factoryBackup, busy = false;
 let espPort, espCompleted = false, himaxCompleted = false, himaxChannel, himaxFlasher, himaxAbort;
 let profile;
 const report = { esp32: null, himax: null };
+const events=[];
+function phase(value) {if(report.himax)report.himax.phase=value;}
 const supported = !!navigator.serial && window.isSecureContext;
-function log(text) { $('log').textContent += `${text}\n`; $('log').scrollTop = $('log').scrollHeight; }
+function log(text) { events.push({time:new Date().toISOString(),message:String(text)});if(events.length>300)events.shift(); $('log').textContent += `${text}\n`; $('log').scrollTop = $('log').scrollHeight; }
 function status(text) { $('status').textContent = text; }
 function controls() {
   $('connect').disabled = busy || !!loader || !supported;
   $('backup').disabled = busy || !loader;
   $('disconnect').disabled = busy || !loader;
   $('install').disabled = busy || !loader || !factoryBackup || !$('ack').checked;
+  $('resume-file').disabled=busy || !supported;
+  $('manual-himax').disabled=busy;
   $('ack').disabled = busy; $('clear').disabled = busy;
   $('install-himax').disabled = busy || !espCompleted || !supported || !$('himax-ack').checked;
   $('himax-ack').disabled = busy;
@@ -120,19 +125,20 @@ status('برای شروع، دستگاه را متصل کنید.'); controls();
 $('himax-ack').addEventListener('change', controls);
 $('install-himax').addEventListener('click', () => operation(async () => {
   if(!espCompleted || !$('himax-ack').checked)throw new Error('Complete ESP32 stage first');
-  himaxCompleted=false;report.himax=null;
+  himaxCompleted=false;
+  report.himax={state:'running',phase:'select-port',startedAt:new Date().toISOString(),bytesAcknowledged:0};
+  $('himax-progress').value=0;
   $('himax-status').textContent='در حال انتخاب پورت مخصوص Himax…';
-  // Only previously authorized ports can be enumerated. Never guess from A/B
-  // suffixes: both UARTs share USB identifiers. Exclude the ESP32 port object.
-  const granted=await navigator.serial.getPorts();
-  const candidates=granted.filter(port=> {
-    const info=port.getInfo();
-    return port!==espPort && info.usbVendorId===0x1a86 && [0x55d2,0x55d3].includes(info.usbProductId);
-  });
-  const port=candidates.length===1 ? candidates[0] : await navigator.serial.requestPort();
-  if(port===espPort)throw new Error('This is the ESP32 port. Select the other Watcher UART for Himax.');
-  await release();
   try {
+    const granted=await navigator.serial.getPorts();
+    const candidates=granted.filter(port=> {
+      const info=port.getInfo();
+      return port!==espPort && info.usbVendorId===0x1a86 && [0x55d2,0x55d3].includes(info.usbProductId);
+    });
+    const port=!$('manual-himax').checked && espPort && candidates.length===1 ? candidates[0] : await navigator.serial.requestPort();
+    if(port===espPort)throw new Error('This is the ESP32 port. Select the other Watcher UART for Himax.');
+    report.himax.port=port.getInfo();
+    await release();phase('download-image');
     status('مرحله ۲: دانلود و بررسی فایل اصلی Himax…');
     const res=await fetch('firmware/himax/himax_firmware_20240816.img');
     if(!res.ok)throw new Error('Cannot download Himax factory image');
@@ -140,20 +146,22 @@ $('install-himax').addEventListener('click', () => operation(async () => {
     if(bytes.length!==HIMAX_SIZE || await sha256(bytes)!==HIMAX_SHA256)throw new Error('Himax image integrity check failed; nothing written');
     log('Himax stock image SHA-256 verified.');
     himaxAbort=new AbortController();controls();
-    himaxChannel=new SerialChannel(port);await himaxChannel.open();
-    himaxFlasher=new HimaxFlasher(himaxChannel,{signal:himaxAbort.signal,log,progress:(done,total)=>{$('progress').value=done/total*100;$('himax-progress').value=done/total*100;}});
+    phase('open-port');himaxChannel=new SerialChannel(port);await himaxChannel.open();
+    himaxFlasher=new HimaxFlasher(himaxChannel,{signal:himaxAbort.signal,log,progress:(done,total)=>{report.himax.bytesAcknowledged=done;$('progress').value=done/total*100;$('himax-progress').value=done/total*100;}});
     $('himax-status').textContent='در انتظار بوت‌لودر Himax؛ اگر پاسخی نیامد، دستگاه را با دکمه سخت‌افزاری ریست کنید. کابل را جدا نکنید.';
     status('مرحله ۲: شناسایی بوت‌لودر Himax…');
-    await himaxFlasher.connect();
+    phase('bootloader-handshake');await himaxFlasher.connect();
     $('himax-status').textContent='بوت‌لودر Himax تأیید شد؛ فایل اصلی در حال نصب است. کابل را جدا نکنید.';
     status('مرحله ۲: ارسال فریمور Himax با XMODEM-CRC…');
-    await himaxFlasher.flash(bytes);
+    phase('transfer-image');await himaxFlasher.flash(bytes);
     himaxCompleted=true;
-    report.himax={file:'himax_firmware_20240816.img',sha256:HIMAX_SHA256,transfer:'XMODEM-CRC128',bootloaderCompletionConfirmed:true,readbackVerified:false,completedAt:new Date().toISOString()};
+    report.himax={...report.himax,state:'success',phase:'complete',file:'himax_firmware_20240816.img',sha256:HIMAX_SHA256,transfer:'XMODEM-CRC128',bootloaderCompletionConfirmed:true,readbackVerified:false,completedAt:new Date().toISOString()};
     $('himax-progress').value=100;
     $('himax-status').textContent='مرحله ۲ کامل شد؛ دریافت فایل و پایان عملیات توسط بوت‌لودر Himax تأیید شد.';
     status('هر دو مرحله نصب تمام شد. برای اتصال SenseCraft، اطلاعات معتبر کارخانه همچنان لازم است.');
   } catch(error) {
+    report.himax={...report.himax,state:himaxAbort?.signal.aborted?'cancelled':'failed',error:{name:error.name,message:error.message},bootloaderRecognized:himaxFlasher?.recognized || false,lastBootloaderText:himaxFlasher?.tail || '',failedAt:new Date().toISOString()};
+    $('manual-himax').checked=true;
     await himaxFlasher?.cancel();
     $('himax-status').textContent='مرحله Himax کامل نشد. گزارش را ببینید؛ در صورت قطع انتقال، پس از ریست همین مرحله را دوباره اجرا کنید.';
     throw error;
@@ -165,9 +173,23 @@ $('cancel-himax').addEventListener('click',()=>{
   himaxAbort?.abort();$('himax-status').textContent='در حال توقف مرحله Himax…';controls();
 });
 $('report').addEventListener('click',()=>{
-  const result={device:profile || null,stages:report,factoryCredentialsRestored:false};
+  const result={schemaVersion:2,flasherVersion:'1.2.0',device:profile || null,stages:report,events,browser:navigator.userAgent,factoryCredentialsRestored:false};
   save(new TextEncoder().encode(JSON.stringify(result,null,2)+'\n'),'watcher-recovery-report.json');
 });
 fetch('device-profile.json').then(response=>{if(!response.ok)throw new Error('Profile unavailable');return response.json();}).then(value=>{
   profile=value;$('device-eui').textContent=value.eui;$('device-sn').textContent=value.serialNumber;
 }).catch(error=>log(error.message));
+
+$('resume-file').addEventListener('change',()=>operation(async()=>{
+  const file=$('resume-file').files[0];if(!file)return;
+  if(file.size>2*1024*1024)throw new Error('Recovery report is too large');
+  const previous=JSON.parse(await file.text());
+  const reference=profile || await (await fetch('device-profile.json')).json();
+  const stage=verifiedPreviousStage(previous,reference.eui);
+  await release();espPort=undefined;espCompleted=true;himaxCompleted=false;
+  report.esp32=stage;report.himax=null;$('manual-himax').checked=true;
+  log('Verified previous ESP32 report imported; ESP32 will not be flashed again. Select the other UART of the same device.');
+  status('گزارش مرحله ۱ وارد شد. اکنون فقط مرحله Himax را روی همان دستگاه اجرا کنید.');
+  $('himax-status').textContent='آماده ادامه از گزارش قبلی؛ پورت Himax همان دستگاه را دستی انتخاب کنید.';
+  $('himax').scrollIntoView({behavior:'smooth'});
+}));
