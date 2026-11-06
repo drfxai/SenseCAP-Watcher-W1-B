@@ -1,0 +1,21 @@
+{
+  "name": "sensecap-watcher-factory-recovery",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "python3 tools/verify_firmware.py && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test tests/*.test.js",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "crypto-js": "4.2.0",
+    "esptool-js": "0.5.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "vite": "6.4.5"
+  }
+}
