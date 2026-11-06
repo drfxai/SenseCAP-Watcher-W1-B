@@ -113,6 +113,40 @@ python -m esptool --chip esp32s3 --port COM5 verify_flash 0x9000 YOUR_OWN_nvsfac
 
 فلش پاک‌شده ESP32 الزاماً به معنی پاک‌شدن Himax نیست. مرحله دوم صفحه فلشر، روش رسمی PowerShell را به‌عنوان مسیر موفق گزارش‌شده و روش مستقیم مرورگر را به‌صورت آزمایشی ارائه می‌کند. برای روش جایگزین خط فرمان، [راهنمای رسمی Himax](https://github.com/Seeed-Studio/OSHW-SenseCAP-Watcher/blob/3ca69aefa8441f57d38993a39df714048633d032/Firmware/README.md#for-himax-firmware) را دنبال کنید و پورت دیگر را انتخاب کنید. فایل رسمی در `public/firmware/himax/himax_firmware_20240816.img` قرار دارد. Seeed استفاده از `python-sscma` و دستور `sscma.cli flasher -f firmware.img` را توضیح داده است. پیش از اجرا پورت صحیح را مطابق راهنمای همان ابزار بررسی کنید.
 
+## اصلاح EUI و S/N از بکاپ ارسالی مالک
+
+[دانلود اسکریپت اصلاح شناسه‌ها](https://drfxai.github.io/SenseCAP-Watcher-W1-B/downloads/repair-device-identity.ps1) · [شرح بررسی فایل](public/validation/identity-repair.json)
+
+این اصلاح فقط برای بکاپ ۲۰۴۸۰۰ بایتی ارسالی مالک با SHA-256 زیر ساخته شده است:
+
+`a278e722ffecb09fe8251b1ac2d0b8ec1d803fb0e5041116c6d093729a6b97f5`
+
+در این فایل namespace کارخانه `device_info` و فیلدهای `SN_SK` و `EUI_SK` وجود نداشتند؛ دو صفحه NVS معتبر و بخش‌هایی از داده‌های قدیمی با ساختار دیگر دیده شد. اصلاح با مولد رسمی Espressif ESP-IDF v5.2.1 ساخته شده و ورودی‌های افزوده‌شده و CRC آن‌ها با parser مستقل همان نسخه بررسی شده‌اند. فقط ۱۹ خانه قبلاً خالی و bitmap متناظر در صفحه فعال استفاده می‌شود؛ تمام ۳۸ رکورد موجود و بایت‌های دیگر، از جمله داده‌های قدیمی غیر NVS، دست‌نخورده می‌مانند. این به معنی سالم‌بودن همه بخش‌های قدیمی فایل نیست.
+
+مقدارهای `SN_SK=113991275244700165` و `EUI_SK=2CF7F1C9647000A4` افزوده می‌شوند. `CODE_SK` از KEY چاپی روی برچسب گرفته می‌شود، چون کد نمایش EUI به این فیلد هم نیاز دارد. شش فیلد ناموجود دیگر (`DEV_KEY_SK`، `AI_KEY_SK`، `ACCESS_KEY_SK`، `DEV_CTL_KEY_SK`، `BATCHID_SK` و `PLATFORM_SK`) به‌صورت رشته خالی ثبت می‌شوند تا loader فریمور، حافظه مقداردهی‌نشده را به‌جای اطلاعات گمشده نخواند. **هیچ کلید ابری حدس زده یا بازیابی نشده است.** این اصلاح فقط شناسه‌های معلوم را بازمی‌گرداند و روی سخت‌افزار هنوز آزموده نشده است.
+
+فایل ورودی و خروجی شامل داده خصوصی NVS است؛ باینری کامل در مخزن منتشر نشده است. اسکریپت فقط patch مربوط به فیلدهای معلوم را دارد، فایل اصلی را تغییر نمی‌دهد و روی سیستم مالک همان باینری بررسی‌شده را می‌سازد. اگر ورودی متفاوت باشد، اجرا را رد می‌کند.
+
+در پوشه فایل اسکریپت و بکاپ، اجرا کنید:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\repair-device-identity.ps1 -InputFile .\nvsfactory-2026-11-06T16-46-39-333Z.bin
+```
+
+فایل خروجی: `nvsfactory-W1-B-identity-fixed.bin` با SHA-256:
+
+`18dff19b2bcdb1a7501db115f52ec9f841bf6e9da3c3fc0a98280d8bb3813fe7`
+
+فقط برای جدول پارتیشن رسمی این پروژه و پورت **COM6 دستگاه مالک**، پس از بستن تب وب‌فلشر و برنامه‌های سریال:
+
+```powershell
+py -m pip install esptool==4.8.1
+py -m esptool --chip esp32s3 --port COM6 --baud 460800 write_flash 0x9000 .\nvsfactory-W1-B-identity-fixed.bin
+py -m esptool --chip esp32s3 --port COM6 --baud 460800 verify_flash 0x9000 .\nvsfactory-W1-B-identity-fixed.bin
+```
+
+این فایل را روی COM7 یا در آدرس صفر ننویسید. بکاپ اصلی را نگه دارید؛ در صورت نیاز با همان دستور و آدرس `0x9000` قابل بازگرداندن است. بعد از نوشتن و تأیید، دستگاه را خاموش و روشن و S/N و EUI را در تنظیمات بررسی کنید. موفقیت این اصلاح هنوز روی دستگاه واقعی تأیید نشده است.
+
 ## توسعه و انتشار GitHub Pages
 
 ```sh

@@ -1,0 +1,39 @@
+{
+  "inputSha256": "a278e722ffecb09fe8251b1ac2d0b8ec1d803fb0e5041116c6d093729a6b97f5",
+  "outputSha256": "18dff19b2bcdb1a7501db115f52ec9f841bf6e9da3c3fc0a98280d8bb3813fe7",
+  "partitionOffset": "0x9000",
+  "partitionSize": 204800,
+  "device": {
+    "model": "SenseCAP Watcher W1-B",
+    "eui": "2CF7F1C9647000A4",
+    "serialNumber": "113991275244700165"
+  },
+  "inputFactoryNamespacePresent": false,
+  "addedNamespace": "device_info",
+  "namespaceIndex": 4,
+  "knownFieldsAdded": [
+    "SN_SK",
+    "EUI_SK",
+    "CODE_SK"
+  ],
+  "absentFieldsStoredAsEmptyStrings": [
+    "DEV_KEY_SK",
+    "BATCHID_SK",
+    "ACCESS_KEY_SK",
+    "AI_KEY_SK",
+    "DEV_CTL_KEY_SK",
+    "PLATFORM_SK"
+  ],
+  "existingLiveNvsRecordsPreserved": 38,
+  "allBytesOutsidePreviouslyUnusedEntrySlotsAndTheirBitmapPreserved": true,
+  "independentEspressifParserAndCrcChecksPassed": true,
+  "opaqueOrInvalidLegacyPagesPreserved": true,
+  "cloudCredentialsRecovered": false,
+  "hardwareTested": false,
+  "containsOriginalPrivateNvsData": true,
+  "notes": [
+    "CODE_SK uses the printed 16-character label key; it is not the 32-character cloud device key.",
+    "Blank fields are absent credentials, not reconstructed credentials.",
+    "Existing non-NVS/invalid pages were already present in the original and were not repaired or discarded."
+  ]
+}
