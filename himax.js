@@ -112,6 +112,7 @@ export class HimaxFlasher {
     while(this.now()<deadline) {
       const byte=await this.byte(Math.min(1000,Math.max(1,deadline-this.now())));
       if(byte!==null && received.length<64)received.push(byte);
+      if(byte===0x15)this.log('Himax receiver returned NAK (0x15): packet rejected.');
       if(byte===0x06 || byte===0x15)return byte;
       if(byte===0x18)throw new Error('Himax bootloader cancelled the transfer');
     }
