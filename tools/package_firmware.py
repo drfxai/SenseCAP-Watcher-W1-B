@@ -7,7 +7,7 @@ from verify_firmware import ROOT, verify
 verify()
 out = ROOT / 'public/downloads'
 out.mkdir(exist_ok=True)
-files = [*sorted((ROOT / 'public/firmware').rglob('*')), ROOT / 'LICENSE', ROOT / 'README.md', *sorted((ROOT / 'tools').glob('*.py')), ROOT / 'requirements.txt']
+files = [*sorted((ROOT / 'public/firmware').rglob('*')), ROOT / 'LICENSE', ROOT / 'README.md', *sorted((ROOT / 'tools').glob('*.py')), ROOT / 'requirements.txt', ROOT / 'public/device-profile.json']
 with zipfile.ZipFile(out / 'watcher-factory-1.1.7.zip', 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
     for file in files:
         if file.is_file():

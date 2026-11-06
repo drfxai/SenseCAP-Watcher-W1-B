@@ -1,0 +1,13 @@
+{
+  "model": "SenseCAP Watcher W1-B",
+  "deviceName": "Maximus",
+  "eui": "2CF7F1C9647000A4",
+  "serialNumber": "113991275244700165",
+  "fccId": "Z4T-WATCHER",
+  "source": "Device label and SenseCraft screenshots supplied by the owner",
+  "purpose": "Reference identity for recovery reports; not a factory NVS image",
+  "printedKeyIncluded": true,
+  "factoryCredentialsRestored": false,
+  "printedKey": "E2B6B8A476C8D76C",
+  "publicationAuthorizedByOwner": true
+}
