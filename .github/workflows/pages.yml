@@ -12,6 +12,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,8 +24,10 @@ jobs:
           python-version: '3.12'
       - run: npm ci
       - run: npm test
-      - run: npx playwright install --with-deps chromium
+      # GitHub-hosted Ubuntu includes Chrome and its system dependencies.
       - run: npm run test:browser
+        env:
+          PLAYWRIGHT_CHANNEL: chrome
       - run: python tools/package_firmware.py
       - run: npm run build
       - uses: actions/upload-artifact@v4
