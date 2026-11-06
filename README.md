@@ -71,6 +71,10 @@ python -m esptool --chip esp32s3 --port COM5 verify_flash 0x9000 YOUR_OWN_nvsfac
 
 ## Himax — تراشه جداگانه
 
+[دانلود مستقیم فایل اصلی Himax](https://drfxai.github.io/SenseCAP-Watcher-W1-B/firmware/himax/himax_firmware_20240816.img) · [بخش Himax در صفحه فلشر](https://drfxai.github.io/SenseCAP-Watcher-W1-B/#himax)
+
+نام فایل: `himax_firmware_20240816.img`؛ حجم: `548864` بایت؛ SHA-256: `55ab2bcaee3bf6e0fad149bb06b36139610bb5578847b94c59937eb32875d0fd`.
+
 فلش پاک‌شده ESP32 الزاماً به معنی پاک‌شدن Himax نیست. وب‌فلشر به Himax دست نمی‌زند. فقط اگر آن تراشه نیز نیازمند بازیابی است، [راهنمای رسمی Himax](https://github.com/Seeed-Studio/OSHW-SenseCAP-Watcher/blob/3ca69aefa8441f57d38993a39df714048633d032/Firmware/README.md#for-himax-firmware) را دنبال کنید و پورت دیگر را انتخاب کنید. فایل رسمی در `public/firmware/himax/himax_firmware_20240816.img` قرار دارد. Seeed استفاده از `python-sscma` و دستور `sscma.cli flasher -f firmware.img` را توضیح داده است. پیش از اجرا پورت صحیح را مطابق راهنمای همان ابزار بررسی کنید.
 
 ## توسعه و انتشار GitHub Pages
